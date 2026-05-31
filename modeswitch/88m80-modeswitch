@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
 """Modeswitch for LGX/Pandora 88M80 (1111:1111) WiFi dongle.
 Sends vendor SCSI command FD..F2 to switch from CD-ROM mode to WiFi mode (a69c:8d80).
+
+Usage:
+  88m80-modeswitch /dev/sda          # switch the device
+  88m80-modeswitch --identify /dev/sda  # print SCSI INQUIRY strings and exit
 """
 import os, ctypes, fcntl, sys, time
 
 SG_IO = 0x2285
+
+# SCSI device type 5 = CD-ROM/DVD.  1111:1111 is a fake VID shared by many
+# OEM devices; verifying the SCSI peripheral type rules out ordinary flash
+# drives that happen to carry the same VID:PID.
+SCSI_TYPE_CDROM = 0x05
+
+# Known-good INQUIRY strings for this dongle.  If your device has different
+# strings, please open an issue with the output of:
+#   88m80-modeswitch --identify /dev/sda
+# Strings are stripped; None means "accept any value" (unknown so far).
+KNOWN_VENDOR  = None   # e.g. b"AIC8800 " — fill in once confirmed
+KNOWN_PRODUCT = None   # e.g. b"USB WIFI        " — fill in once confirmed
+
 
 class SgIoHdr(ctypes.Structure):
     _fields_ = [
@@ -32,6 +49,7 @@ class SgIoHdr(ctypes.Structure):
         ('info',            ctypes.c_uint32),
     ]
 
+
 def find_sg_device(dev):
     """Given a block device like /dev/sda, return the corresponding /dev/sgN.
     CD-ROMs are read-only media so O_RDWR on the block device fails with EROFS;
@@ -45,14 +63,19 @@ def find_sg_device(dev):
             return f'/dev/{entries[0]}'
     return dev
 
-def modeswitch(sg_device):
-    cmd   = (ctypes.c_uint8 * 16)(0xFD,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0xF2)
+
+def sg_cmd(sg_device, cmd_bytes, data_len=0):
+    """Send a SCSI command and return (status, data_buf)."""
+    cmd   = (ctypes.c_uint8 * 16)(*cmd_bytes, *([0] * (16 - len(cmd_bytes))))
+    data  = (ctypes.c_uint8 * data_len)() if data_len else None
     sense = (ctypes.c_uint8 * 32)()
     hdr = SgIoHdr()
     hdr.interface_id    = ord('S')
-    hdr.dxfer_direction = -1  # SG_DXFER_NONE
-    hdr.cmd_len         = 16
+    hdr.dxfer_direction = -3 if data_len else -1  # SG_DXFER_FROM_DEV / SG_DXFER_NONE
+    hdr.cmd_len         = len(cmd_bytes)
     hdr.mx_sb_len       = 32
+    hdr.dxfer_len       = data_len
+    hdr.dxferp          = ctypes.cast(data,  ctypes.c_void_p).value if data else 0
     hdr.cmdp            = ctypes.cast(cmd,   ctypes.c_void_p).value
     hdr.sbp             = ctypes.cast(sense, ctypes.c_void_p).value
     hdr.timeout         = 10000
@@ -61,17 +84,84 @@ def modeswitch(sg_device):
         fcntl.ioctl(fd, SG_IO, hdr)
     finally:
         os.close(fd)
-    return hdr.status
+    return hdr.status, bytes(data) if data else b''
+
+
+def inquiry(sg_device):
+    """Return (peripheral_type, vendor, product, revision) from SCSI INQUIRY."""
+    # INQUIRY: opcode 0x12, allocation length 96
+    status, buf = sg_cmd(sg_device, [0x12, 0, 0, 0, 96, 0], data_len=96)
+    if status != 0 or len(buf) < 36:
+        return None, b'', b'', b''
+    ptype   = buf[0] & 0x1f
+    vendor  = buf[8:16]
+    product = buf[16:32]
+    rev     = buf[32:36]
+    return ptype, vendor, product, rev
+
+
+def is_target_device(sg_device):
+    """Return True if INQUIRY confirms this looks like the 88M80 dongle.
+    Checks device type (must be CD-ROM) and known vendor/product if set.
+    Prints INQUIRY strings so users can report them for KNOWN_VENDOR/PRODUCT.
+    """
+    ptype, vendor, product, rev = inquiry(sg_device)
+    if ptype is None:
+        print(f"88m80-modeswitch: INQUIRY failed on {sg_device}, proceeding anyway",
+              file=sys.stderr)
+        return True
+
+    vendor_s  = vendor.rstrip(b' \x00').decode('ascii', errors='replace')
+    product_s = product.rstrip(b' \x00').decode('ascii', errors='replace')
+    rev_s     = rev.rstrip(b' \x00').decode('ascii', errors='replace')
+    print(f"88m80-modeswitch: INQUIRY {sg_device}: "
+          f"type=0x{ptype:02x} vendor={vendor_s!r} product={product_s!r} rev={rev_s!r}",
+          file=sys.stderr)
+
+    if ptype != SCSI_TYPE_CDROM:
+        print(f"88m80-modeswitch: device type 0x{ptype:02x} is not CD-ROM (0x05), skipping",
+              file=sys.stderr)
+        return False
+
+    if KNOWN_VENDOR is not None and vendor != KNOWN_VENDOR:
+        print(f"88m80-modeswitch: vendor mismatch, skipping", file=sys.stderr)
+        return False
+
+    if KNOWN_PRODUCT is not None and product != KNOWN_PRODUCT:
+        print(f"88m80-modeswitch: product mismatch, skipping", file=sys.stderr)
+        return False
+
+    return True
+
+
+def modeswitch(sg_device):
+    status, _ = sg_cmd(sg_device, [0xFD,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0xF2])
+    return status
+
 
 if __name__ == '__main__':
-    dev = sys.argv[1] if len(sys.argv) > 1 else '/dev/sda'
-    # Wait for device to be ready
+    args = sys.argv[1:]
+    identify_only = '--identify' in args
+    args = [a for a in args if a != '--identify']
+
+    dev = args[0] if args else '/dev/sda'
+
     for _ in range(10):
         if os.path.exists(dev):
             break
         time.sleep(0.5)
     if not os.path.exists(dev):
         sys.exit(1)
+
     sg_dev = find_sg_device(dev)
+
+    if identify_only:
+        inquiry(sg_dev)  # printed as side-effect inside is_target_device
+        is_target_device(sg_dev)
+        sys.exit(0)
+
+    if not is_target_device(sg_dev):
+        sys.exit(1)
+
     status = modeswitch(sg_dev)
     sys.exit(0 if status == 0 else 1)

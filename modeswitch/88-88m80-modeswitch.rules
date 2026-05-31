@@ -3,5 +3,16 @@
 # Uses systemd device integration so the service runs after local-fs.target
 # (when /var/usrlocal is mounted). RUN+= fires too early — /usr/local is a
 # symlink into /var which isn't mounted yet at udev time on Bazzite.
-ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", \
+#
+# 1111:1111 is a fake/unassigned VID shared by many OEM devices.
+# ATTRS{type}=="5" narrows the match to SCSI CD-ROM type devices only,
+# which rules out ordinary flash drives carrying the same VID:PID.
+# The modeswitch script additionally verifies the SCSI INQUIRY response
+# before sending the switch command.
+#
+# If you know the INQUIRY vendor/product strings for this dongle, add:
+#   ATTRS{vendor}=="AIC8800  ", ATTRS{model}=="USB WIFI        "
+# (verify with: 88m80-modeswitch --identify /dev/sda)
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", \
+    ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", ATTRS{type}=="5", \
     TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service"
