@@ -15,4 +15,5 @@ ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", \
     ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", \
     ATTRS{vendor}=="LGX*", ATTRS{model}=="WIFI6*", \
     ATTRS{manufacturer}=="AIC", ATTRS{product}=="88M80", \
-    TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service"
+    TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service", \
+    RUN+="/bin/sh -c 'test -x /usr/local/bin/88m80-modeswitch && exec /usr/local/bin/88m80-modeswitch /dev/%k || true'"
