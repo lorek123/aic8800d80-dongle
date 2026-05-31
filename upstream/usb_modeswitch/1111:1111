@@ -1,0 +1,26 @@
+# LGX/Pandora International 88M80 — AIC8800D80 USB WiFi+BT dongle
+#
+# Modeswitch command discovered by reverse engineering of the Windows
+# AicWifiService.exe / Usb_driver.dll installer shipped on the device's
+# virtual CD-ROM.
+#
+# Set_CS1_0() in Usb_driver.dll enumerates USB CDROM/removable drives via
+# SetupDiGetClassDevsA + CreateFileA and sends a 16-byte SCSI vendor command
+# over the Mass Storage bulk endpoint:
+#   FD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F2
+#
+# This switches the device from CD-ROM mode (1111:1111) to AIC firmware-
+# loading mode (a69c:8d80).  The aic_load_fw kernel module then uploads BT
+# patches and WiFi firmware, after which the device re-enumerates as
+# a69c:8d81 (AIC8800D80 WiFi+BT).
+#
+# USB ID transitions:
+#   1111:1111  (CD-ROM, Mass Storage class)
+#       v  SCSI vendor cmd FD..F2 (this entry)
+#   a69c:8d80  (AIC firmware-loading mode, vendor-specific)
+#       v  aic_load_fw.ko
+#   a69c:8d81  (AIC8800D80, WiFi+BT active mode)
+
+TargetVendor=0xa69c
+TargetProduct=0x8d80
+MessageContent="fd000000000000000000000000000000f2"

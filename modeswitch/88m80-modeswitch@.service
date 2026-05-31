@@ -1,0 +1,7 @@
+[Unit]
+Description=AIC8800D80 Modeswitch (%I)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/88m80-modeswitch /dev/%I

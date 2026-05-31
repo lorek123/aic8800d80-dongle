@@ -1,0 +1,9 @@
+.claude/
+*.pyc
+__pycache__/
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+

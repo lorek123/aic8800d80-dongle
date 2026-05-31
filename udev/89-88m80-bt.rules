@@ -1,0 +1,3 @@
+# AIC8800D80 BT: rebind from generic btusb to aic_btusb after WiFi mode
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="a69c", ATTRS{idProduct}=="8d81", \
+    RUN+="/usr/local/bin/aic8800-bind-bt.sh"

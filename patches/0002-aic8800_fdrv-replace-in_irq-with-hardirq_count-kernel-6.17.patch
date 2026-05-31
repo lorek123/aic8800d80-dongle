@@ -1,0 +1,35 @@
+From: Artur Lorenz <lorek123@gmail.com>
+Date: Sat, 31 May 2026
+Subject: [PATCH 2/2] aic8800_fdrv: replace in_irq() with hardirq_count() for kernel 6.17+
+
+in_irq() was removed in kernel 6.17 (commit 57e969aa1b9c).  Use
+hardirq_count() which has the same semantics and compiles on all
+supported kernel versions.
+
+This affects a debug log in reord_deinit_sta() in rwnx_rx.c.
+The Radxa reference driver (fix-linux-6.19-build.patch) uses
+LINUX_VERSION_CODE guards; this patch uses the simpler unconditional
+replacement which is safe since hardirq_count() has been present since
+at least kernel 5.0.
+
+Fixes: build failure on kernel >= 6.17
+Tested-by: Artur Lorenz <lorek123@gmail.com>  (kernel 6.19, Bazzite 44)
+---
+ drivers/aic8800/aic8800_fdrv/rwnx_rx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/aic8800/aic8800_fdrv/rwnx_rx.c b/drivers/aic8800/aic8800_fdrv/rwnx_rx.c
+index 2f0ae38..ae941f4 100755
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_rx.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_rx.c
+@@ -1626,7 +1626,7 @@ void reord_deinit_sta(struct aicwf_rx_priv* rx_priv, struct reord_ctrl_info *reo
+             reord_rxframe_free(&rx_priv->freeq_lock, &rx_priv->rxframes_freequeue, &req->rxframe_list);
+         }
+
+-		AICWFDBG(LOGINFO, "reord dinit in_irq():%d in_atomic:%d in_softirq:%d\r\n", (int)in_irq()
++		AICWFDBG(LOGINFO, "reord dinit in_irq():%d in_atomic:%d in_softirq:%d\r\n", (int)hardirq_count()
+ 			,(int)in_atomic(), (int)in_softirq());
+         spin_unlock_bh(&preorder_ctrl->reord_list_lock);
+     }
+--
+2.49.0

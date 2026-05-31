@@ -1,0 +1,80 @@
+From: Artur Lorenz <lorek123@gmail.com>
+Date: Sat, 31 May 2026
+Subject: [PATCH 1/2] aic_load_fw: enable BT patch loading for AIC8800D80 U02/U03
+
+The entire BT patch-loading block in aicfw_download_fw_8800d80() is
+wrapped in #if 0 in the BLUEMOON233 and goecho community drivers.  This
+means fw_patch_table, fw_adid, fw_patch and fw_patch_ext0 are never
+uploaded before the main firmware, so BT is silently non-functional on
+any chip_id >= CHIP_REV_U02 (i.e. every real-world AIC8800D80 device).
+
+Remove the two #if 0 / #endif guards:
+
+  1. The outer guard that wraps the patch-table allocation and
+     adid/patch address setup (chip_id detection block).
+
+  2. The inner guard inside the FW_NORMAL_MODE / chip_id != CHIP_REV_U01
+     branch that wraps the actual firmware uploads
+     (fw_adid, fw_patch, ext_patch, patch_table).
+
+The correct firmware loading order is:
+  fw_patch_table_8800d80_u02.bin  (patch table)
+  fw_adid_8800d80_u02.bin         (BT address ID)
+  fw_patch_8800d80_u02.bin        (BT patch)
+  fw_patch_8800d80_u02_ext0.bin   (BT extended patch)
+  fmacfw_8800d80_u02.bin          (main WiFi+BT firmware)
+
+The Radxa reference driver (radxa-pkg/aic8800) already has this
+corrected; this patch brings the standalone community drivers into
+alignment.
+
+Fixes: BT interface (hci0) never appears on AIC8800D80 USB dongle
+Tested-by: Artur Lorenz <lorek123@gmail.com>  (kernel 6.19, Bazzite 44)
+---
+ .../aic8800/aic_load_fw/aic_compat_8800d80.c  | 11 -----------
+ 1 file changed, 11 deletions(-)
+
+diff --git a/drivers/aic8800/aic_load_fw/aic_compat_8800d80.c b/drivers/aic8800/aic_load_fw/aic_compat_8800d80.c
+index 8f5c56b..181f073 100755
+--- a/drivers/aic8800/aic_load_fw/aic_compat_8800d80.c
++++ b/drivers/aic8800/aic_load_fw/aic_compat_8800d80.c
+@@ -386,7 +386,6 @@ int aicfw_download_fw_8800d80(struct aic_usb_dev *usb_dev)
+
+     int i = 0;
+
+-#if 0
+     if (chip_id == CHIP_REV_U01) {
+         head = aicbt_patch_table_alloc(usb_dev, FW_PATCH_TABLE_NAME_8800D80);
+     } else {
+@@ -397,9 +396,6 @@ int aicfw_download_fw_8800d80(struct aic_usb_dev *usb_dev)
+         return -1;
+     }
+
+-    if(head == NULL){
+-        return -1;
+-    }
+     if (chip_id == CHIP_REV_U01) {
+         patch_info.addr_adid = FW_RAM_ADID_BASE_ADDR_8800D80;
+         patch_info.addr_patch = FW_RAM_PATCH_BASE_ADDR_8800D80;
+@@ -414,11 +410,9 @@ int aicfw_download_fw_8800d80(struct aic_usb_dev *usb_dev)
+     }
+
+     printk("addr_adid 0x%x, addr_patch 0x%x\n", patch_info.addr_adid, patch_info.addr_patch);
+-#endif
+     if(testmode == FW_NORMAL_MODE){
+
+         if (chip_id != CHIP_REV_U01){
+-            #if 0
+             if(rwnx_plat_bin_fw_upload_android(usb_dev, patch_info.addr_adid, FW_ADID_BASE_NAME_8800D80_U02)) {
+                 return -1;
+             }
+@@ -433,7 +427,6 @@ int aicfw_download_fw_8800d80(struct aic_usb_dev *usb_dev)
+             if (aicbt_patch_table_load(usb_dev, head)) {
+                 return -1;
+             }
+-            #endif
+
+             if (IS_CHIP_ID_H()){
+                 if(rwnx_plat_bin_fw_upload_android(usb_dev, RAM_FMAC_FW_ADDR_8800D80_U02, FW_BASE_NAME_8800D80_H_U02))
+--
+2.49.0

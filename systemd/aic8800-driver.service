@@ -1,0 +1,12 @@
+[Unit]
+Description=AIC8800D80 WiFi Driver
+After=udev.service
+Wants=udev.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/aic8800-load-driver.sh
+
+[Install]
+WantedBy=multi-user.target

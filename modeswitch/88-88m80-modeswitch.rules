@@ -1,0 +1,7 @@
+# LGX/Pandora 88M80 WiFi dongle modeswitch
+# Triggers when device appears in CD-ROM mode (1111:1111).
+# Uses systemd device integration so the service runs after local-fs.target
+# (when /var/usrlocal is mounted). RUN+= fires too early — /usr/local is a
+# symlink into /var which isn't mounted yet at udev time on Bazzite.
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", \
+    TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service"
