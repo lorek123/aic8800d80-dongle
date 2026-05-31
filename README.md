@@ -1,22 +1,33 @@
-# AIC8800D80 USB WiFi+BT Dongle — Linux Support
+# AIC8800D80 USB WiFi+BT Dongle — RE Notes and Bazzite Integration
 
-Linux support for the **LGX/Pandora International 88M80** WiFi+BT USB dongle
-(chip: AIC8800D80, USB CD-ROM ID `1111:1111`, WiFi+BT ID `a69c:8d81`).
+RE documentation and immutable-distro (Bazzite / Silverblue) setup for the
+**LGX/Pandora International 88M80** USB WiFi+BT dongle (chip: AIC8800D80,
+CD-ROM mode `1111:1111`, active mode `a69c:8d81`).
 
 **Status: WiFi ✅ Bluetooth ✅** (kernel 6.19, Bazzite 44 / immutable Fedora)
 
+> **Other repos you should know about:**
+> [olamellberg/AIC8800D80](https://github.com/olamellberg/AIC8800D80) — clean installer for standard distros
+> [shenmintao/aic8800d80](https://github.com/shenmintao/aic8800d80) — comprehensive DKMS packaging, Bazzite RPM spec
+
 ---
 
-## The Problem
+## What this repo adds
 
-This dongle ships as a virtual CD-ROM (`1111:1111`) and requires a modeswitch
-command to activate as a WiFi adapter.  Once switched, it needs the
-out-of-tree AIC8800 kernel driver — but all community builds of that driver
-have a **critical bug that silently breaks Bluetooth**: the BT firmware
-patch-loading block is wrapped in `#if 0`.
+Two things not covered elsewhere:
 
-This repo documents the reverse engineering that found the modeswitch command,
-provides the working system integration files, and contains the driver patches.
+**1. Reverse engineering trail** — The modeswitch SCSI command (`FD..F2`) and
+the full USB ID transition sequence were found by Ghidra analysis of the
+Windows `AicWifiService.exe` / `Usb_driver.dll` binaries shipped on the
+device's virtual CD-ROM.  See [`re/`](re/) for the complete notes and Ghidra
+projects.  Other repos list the command; this is where the command came from.
+
+**2. Bazzite / Silverblue boot integration** — On ostree-based immutable
+distros, `/usr/local` is a symlink into `/var` which is **not mounted when
+udev fires**.  A standard `RUN+=` modeswitch rule silently fails at every
+boot.  The fix is a systemd template service (`After=local-fs.target`) that
+udev schedules but does not run directly.  No RPM build required — just three
+files.  See [Modeswitch on immutable distros](#modeswitch-on-immutable-distros).
 
 ---
 
@@ -49,17 +60,34 @@ wlan0 + hci0
 
 ## Modeswitch
 
-The modeswitch command was discovered by reverse engineering the Windows
-`AicWifiService.exe` / `Usb_driver.dll` installer (see [`re/`](re/)).
-
 `Usb_driver.dll::Set_CS1_0()` sends a 16-byte SCSI vendor command via the
-Mass Storage bulk endpoint:
+Mass Storage bulk endpoint (see [`re/`](re/) for how this was found):
 
 ```
 FD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F2
 ```
 
-### Install modeswitch
+For `usb_modeswitch`, this must be wrapped in a 31-byte USB Mass Storage CBW
+(see `upstream/usb_modeswitch/1111:1111`).  The Python script in `modeswitch/`
+uses `SG_IO` directly so the kernel handles CBW framing automatically.
+
+### Modeswitch on standard distros
+
+For standard (mutable) distros, `usb_modeswitch` with the entry in
+`upstream/usb_modeswitch/1111:1111` is the simplest path.  See also
+[olamellberg/AIC8800D80](https://github.com/olamellberg/AIC8800D80) for a
+fully automated installer.
+
+### Modeswitch on immutable distros
+
+On Bazzite/Silverblue, `/usr/local` → `/var/usrlocal` is **not mounted when
+udev fires** early in boot, so `usb_modeswitch` or any `RUN+=` rule pointing
+to `/usr/local/bin/` fails silently.  The device stays in `1111:1111` mode,
+modules load but find nothing to probe, and there is no error in the log.
+
+**Fix:** use `TAG+="systemd"` + `ENV{SYSTEMD_WANTS}` so that udev schedules
+a template service instead of running a script directly.  The service has
+`After=local-fs.target`, so systemd waits until `/var` is mounted.
 
 ```bash
 # Install the Python modeswitch script
@@ -71,10 +99,9 @@ sudo install -m 644 modeswitch/88m80-modeswitch@.service /etc/systemd/system/
 sudo udevadm control --reload-rules
 ```
 
-The udev rule uses `TAG+="systemd"` + `ENV{SYSTEMD_WANTS}` rather than a
-plain `RUN+=` rule so that the script runs **after `local-fs.target`**.
-This is required on immutable distros (Bazzite, Silverblue) where
-`/usr/local` is a symlink into `/var` and is not mounted at udev time.
+The script resolves the block device to its `/dev/sgN` counterpart via sysfs
+and opens it `O_RDONLY` — a direct `O_RDWR` open on CD-ROM block media fails
+with `EROFS` when called from a service rather than inline from udev.
 
 ---
 
@@ -162,19 +189,21 @@ EROFS on write-open).
 | Target | Status | File |
 |--------|--------|------|
 | `usb_modeswitch` device database | Ready to submit | `upstream/usb_modeswitch/1111:1111` |
-| BT `#if 0` fix → BLUEMOON233 | Ready to PR | `patches/0001-*` |
-| `in_irq()` fix → BLUEMOON233 | Ready to PR | `patches/0002-*` |
-| `BlueZ` default → radxa-pkg (already merged) | Done | — |
+| BT `#if 0` fix → BLUEMOON233 | PR open | `patches/0001-*` |
+| `in_irq()` fix → BLUEMOON233 | PR open | `patches/0002-*` |
+| `BlueZ` default → radxa-pkg | Already merged | — |
 
 ---
 
 ## Reverse engineering
 
-See [`re/aic8800-upstream-notes.md`](re/aic8800-upstream-notes.md) for full RE notes,
-including how the modeswitch command was found via Ghidra headless analysis of
-the Windows `AicWifiService.exe` + `Usb_driver.dll` binaries.
+See [`re/aic8800-upstream-notes.md`](re/aic8800-upstream-notes.md) for full RE notes:
+how `Set_CS1_0()` was found in `Usb_driver.dll` via Ghidra headless analysis,
+how the USB ID transitions were traced, what the BT firmware loading bug
+actually is and why it's silent, and the boot-timing root cause on ostree.
 
-Ghidra projects are in [`re/ghidra/`](re/ghidra/).
+Ghidra projects (analyzed `Usb_driver.dll` and `AicWifiService.exe`) are in
+[`re/ghidra/`](re/ghidra/).
 
 ---
 
@@ -182,7 +211,9 @@ Ghidra projects are in [`re/ghidra/`](re/ghidra/).
 
 | Repo | Role |
 |------|------|
-| [radxa-pkg/aic8800](https://github.com/radxa-pkg/aic8800) | Most maintained; BT firmware hotfix at commit `dd2afa18` |
-| [BLUEMOON233/AIC8800-Linux-Driver](https://github.com/BLUEMOON233/AIC8800-Linux-Driver) | Kernel 6.17+ compat base (has `#if 0` BT bug) |
-| [goecho/aic8800_linux_drvier](https://github.com/goecho/aic8800_linux_drvier) | Alternative (same `#if 0` bug) |
+| [radxa-pkg/aic8800](https://github.com/radxa-pkg/aic8800) | Most maintained; all patches as `debian/patches/`; BT firmware hotfix at `dd2afa18` |
+| [BLUEMOON233/AIC8800-Linux-Driver](https://github.com/BLUEMOON233/AIC8800-Linux-Driver) | Community base driver (still has `#if 0` BT bug as of this writing) |
+| [goecho/aic8800_linux_drvier](https://github.com/goecho/aic8800_linux_drvier) | Alternative community base (same `#if 0` bug) |
+| [olamellberg/AIC8800D80](https://github.com/olamellberg/AIC8800D80) | Standard-distro installer for this exact device |
+| [shenmintao/aic8800d80](https://github.com/shenmintao/aic8800d80) | DKMS packaging + Bazzite RPM spec |
 | [usb_modeswitch database](https://www.draisberghof.de/usb_modeswitch/) | Where `upstream/usb_modeswitch/1111:1111` should be submitted |

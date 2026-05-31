@@ -21,6 +21,12 @@
 #       v  aic_load_fw.ko
 #   a69c:8d81  (AIC8800D80, WiFi+BT active mode)
 
+DefaultVendor=0x1111
+DefaultProduct=0x1111
 TargetVendor=0xa69c
 TargetProduct=0x8d80
-MessageContent="fd000000000000000000000000000000f2"
+# Full 31-byte USB Mass Storage CBW (Command Block Wrapper):
+#   USBC (4) + dCBWTag (4) + dCBWDataTransferLength 0 (4) +
+#   bmCBWFlags 0x00 (1) + bCBWLUN 0x00 (1) + bCBWCBLength 0x10=16 (1) +
+#   CDB: FD 00..00 F2 (16)
+MessageContent="555342431234567800000000000010fd0000000000000000000000000000f2"
