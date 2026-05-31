@@ -5,15 +5,13 @@
 # symlink into /var which isn't mounted yet at udev time on Bazzite.
 #
 # 1111:1111 is a fake/unassigned VID shared by many OEM devices.
-# ATTRS{vendor} and ATTRS{model} match the SCSI INQUIRY response strings
-# (LGX / WIFI6) to uniquely identify this dongle among other 1111:1111 devices.
-# ATTRS{manufacturer} and ATTRS{product} are the USB string descriptors
-# (AIC / 88M80) as a second layer of confirmation.
-# Note: the device presents SCSI peripheral type 0x00 (Direct-Access), not
-# CD-ROM (0x05), despite appearing as a virtual storage device.
+# ATTRS{vendor} and ATTRS{model} match the SCSI INQUIRY strings (LGX / WIFI6)
+# which are on the SCSI device parent — all on the same parent level, so udev
+# can match them together.  Mixing SCSI-level and USB-level ATTRS in one rule
+# fails in modern udev (v230+): it locks onto the first parent that matches
+# any ATTRS condition and requires all others to match the same parent.
+# The modeswitch script itself also verifies KNOWN_VENDOR/PRODUCT via INQUIRY.
 ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", \
-    ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", \
     ATTRS{vendor}=="LGX*", ATTRS{model}=="WIFI6*", \
-    ATTRS{manufacturer}=="AIC", ATTRS{product}=="88M80", \
     TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service", \
     RUN+="/bin/sh -c 'test -x /usr/local/bin/88m80-modeswitch && exec /usr/local/bin/88m80-modeswitch /dev/%k || true'"
