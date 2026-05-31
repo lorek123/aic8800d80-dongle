@@ -5,14 +5,14 @@
 # symlink into /var which isn't mounted yet at udev time on Bazzite.
 #
 # 1111:1111 is a fake/unassigned VID shared by many OEM devices.
-# ATTRS{type}=="5" narrows the match to SCSI CD-ROM type devices only,
-# which rules out ordinary flash drives carrying the same VID:PID.
-# The modeswitch script additionally verifies the SCSI INQUIRY response
-# before sending the switch command.
-#
-# If you know the INQUIRY vendor/product strings for this dongle, add:
-#   ATTRS{vendor}=="AIC8800  ", ATTRS{model}=="USB WIFI        "
-# (verify with: 88m80-modeswitch --identify /dev/sda)
+# ATTRS{vendor} and ATTRS{model} match the SCSI INQUIRY response strings
+# (LGX / WIFI6) to uniquely identify this dongle among other 1111:1111 devices.
+# ATTRS{manufacturer} and ATTRS{product} are the USB string descriptors
+# (AIC / 88M80) as a second layer of confirmation.
+# Note: the device presents SCSI peripheral type 0x00 (Direct-Access), not
+# CD-ROM (0x05), despite appearing as a virtual storage device.
 ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z]", \
-    ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", ATTRS{type}=="5", \
+    ATTRS{idVendor}=="1111", ATTRS{idProduct}=="1111", \
+    ATTRS{vendor}=="LGX*", ATTRS{model}=="WIFI6*", \
+    ATTRS{manufacturer}=="AIC", ATTRS{product}=="88M80", \
     TAG+="systemd", ENV{SYSTEMD_WANTS}="88m80-modeswitch@%k.service"

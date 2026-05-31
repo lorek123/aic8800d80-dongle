@@ -10,17 +10,14 @@ import os, ctypes, fcntl, sys, time
 
 SG_IO = 0x2285
 
-# SCSI device type 5 = CD-ROM/DVD.  1111:1111 is a fake VID shared by many
-# OEM devices; verifying the SCSI peripheral type rules out ordinary flash
-# drives that happen to carry the same VID:PID.
-SCSI_TYPE_CDROM = 0x05
-
-# Known-good INQUIRY strings for this dongle.  If your device has different
-# strings, please open an issue with the output of:
+# Known-good SCSI INQUIRY strings for this dongle (confirmed on LGX/Pandora 88M80).
+# Peripheral type is 0x00 (Direct-Access), not 0x05 (CD-ROM) — the device
+# presents itself as a plain disk/flash device, not an optical drive.
+# Vendor and product strings are space-padded to 8 and 16 bytes respectively.
+# If your device has different strings, open an issue with:
 #   88m80-modeswitch --identify /dev/sda
-# Strings are stripped; None means "accept any value" (unknown so far).
-KNOWN_VENDOR  = None   # e.g. b"AIC8800 " — fill in once confirmed
-KNOWN_PRODUCT = None   # e.g. b"USB WIFI        " — fill in once confirmed
+KNOWN_VENDOR  = b"LGX     "   # bytes 8-15 of INQUIRY response
+KNOWN_PRODUCT = b"WIFI6           "   # bytes 16-31 of INQUIRY response
 
 
 class SgIoHdr(ctypes.Structure):
@@ -117,11 +114,6 @@ def is_target_device(sg_device):
     print(f"88m80-modeswitch: INQUIRY {sg_device}: "
           f"type=0x{ptype:02x} vendor={vendor_s!r} product={product_s!r} rev={rev_s!r}",
           file=sys.stderr)
-
-    if ptype != SCSI_TYPE_CDROM:
-        print(f"88m80-modeswitch: device type 0x{ptype:02x} is not CD-ROM (0x05), skipping",
-              file=sys.stderr)
-        return False
 
     if KNOWN_VENDOR is not None and vendor != KNOWN_VENDOR:
         print(f"88m80-modeswitch: vendor mismatch, skipping", file=sys.stderr)

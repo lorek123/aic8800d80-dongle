@@ -15,16 +15,26 @@
 # a69c:8d81 (AIC8800D80 WiFi+BT).
 #
 # USB ID transitions:
-#   1111:1111  (CD-ROM, Mass Storage class)
+#   1111:1111  (Mass Storage, iManufacturer="AIC" iProduct="88M80")
 #       v  SCSI vendor cmd FD..F2 (this entry)
 #   a69c:8d80  (AIC firmware-loading mode, vendor-specific)
 #       v  aic_load_fw.ko
 #   a69c:8d81  (AIC8800D80, WiFi+BT active mode)
+#
+# USB string descriptors (confirmed):
+#   iManufacturer: "AIC"
+#   iProduct:      "88M80"
+#   bcdDevice:     10.01
+#
+# SCSI INQUIRY (confirmed, peripheral type 0x00 Direct-Access):
+#   Vendor:   "LGX     "
+#   Product:  "WIFI6           "
 
 DefaultVendor=0x1111
 DefaultProduct=0x1111
 TargetVendor=0xa69c
 TargetProduct=0x8d80
+InquireDevice=1
 # Full 31-byte USB Mass Storage CBW (Command Block Wrapper):
 #   USBC (4) + dCBWTag (4) + dCBWDataTransferLength 0 (4) +
 #   bmCBWFlags 0x00 (1) + bCBWLUN 0x00 (1) + bCBWCBLength 0x10=16 (1) +
